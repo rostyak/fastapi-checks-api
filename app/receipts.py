@@ -1,8 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from . import models, schemas
 from .dependencies import get_db, get_current_user
+from .models import User, Receipt
+from .schemas import PaymentType
 
 router = APIRouter()
 
@@ -65,5 +70,121 @@ def create_receipt(
         ),
         total=total_sum,
         rest=rest,
+        created_at=receipt.created_at
+    )
+
+
+@router.get("/receipts", response_model=List[schemas.ReceiptOutput])
+def get_receipts(
+    created_from: Optional[datetime] = Query(None),
+    created_to: Optional[datetime] = Query(None),
+    total_min: Optional[float] = Query(None),
+    total_max: Optional[float] = Query(None),
+    payment_type: Optional[PaymentType] = Query(None),
+    limit: int = Query(10, ge=1),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    query = db.query(
+        Receipt
+    ).filter(
+        Receipt.user_id == current_user.id
+    )
+
+    if created_from:
+        query = query.filter(Receipt.created_at >= created_from)
+    if created_to:
+        query = query.filter(Receipt.created_at <= created_to)
+    if total_min is not None:
+        query = query.filter(Receipt.total >= total_min)
+    if total_max is not None:
+        query = query.filter(Receipt.total <= total_max)
+    if payment_type:
+        query = query.filter(Receipt.payment_type == payment_type)
+
+    receipts = query.order_by(
+        Receipt.created_at.desc()
+    ).offset(offset).limit(limit).all()
+
+    result = []
+
+    for receipt in receipts:
+        items = db.query(
+            models.ReceiptItem
+        ).filter_by(
+            receipt_id=receipt.id
+        ).all()
+
+        products = [
+            schemas.ProductOutput(
+                name=item.name,
+                price=item.price,
+                quantity=item.quantity,
+                total=item.total
+            )
+            for item in items
+        ]
+
+        payment = schemas.PaymentOutput(
+            type=receipt.payment_type,
+            amount=receipt.payment_amount
+        )
+
+        result.append(
+            schemas.ReceiptOutput(
+                id=receipt.id,
+                products=products,
+                payment=payment,
+                total=receipt.total,
+                rest=receipt.rest,
+                created_at=receipt.created_at
+            )
+        )
+
+    return result
+
+
+@router.get("/receipts/{receipt_id}", response_model=schemas.ReceiptOutput)
+def get_receipt_by_id(
+    receipt_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    receipt = db.query(Receipt).filter(
+        Receipt.id == receipt_id,
+        Receipt.user_id == current_user.id
+    ).first()
+
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+
+    items = db.query(
+        models.ReceiptItem
+    ).filter_by(
+        receipt_id=receipt.id
+    ).all()
+
+    products = [
+        schemas.ProductOutput(
+            name=item.name,
+            price=item.price,
+            quantity=item.quantity,
+            total=item.total
+        )
+        for item in items
+    ]
+
+    payment = schemas.PaymentOutput(
+        type=receipt.payment_type,
+        amount=receipt.payment_amount
+    )
+
+    return schemas.ReceiptOutput(
+        id=receipt.id,
+        products=products,
+        payment=payment,
+        total=receipt.total,
+        rest=receipt.rest,
         created_at=receipt.created_at
     )
