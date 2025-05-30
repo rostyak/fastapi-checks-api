@@ -2,12 +2,12 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from starlette.responses import PlainTextResponse
 
 from . import models, schemas
 from .dependencies import get_db, get_current_user
-from .models import User, Receipt, ReceiptItem
+from .models import User, Receipt
 from .schemas import PaymentType
 
 router = APIRouter()
@@ -89,6 +89,8 @@ def get_receipts(
 ):
     query = db.query(
         Receipt
+    ).options(
+        selectinload(Receipt.items)
     ).filter(
         Receipt.user_id == current_user.id
     )
@@ -111,12 +113,6 @@ def get_receipts(
     result = []
 
     for receipt in receipts:
-        items = db.query(
-            models.ReceiptItem
-        ).filter_by(
-            receipt_id=receipt.id
-        ).all()
-
         products = [
             schemas.ProductOutput(
                 name=item.name,
@@ -124,7 +120,7 @@ def get_receipts(
                 quantity=item.quantity,
                 total=item.total
             )
-            for item in items
+            for item in receipt.items
         ]
 
         payment = schemas.PaymentOutput(
@@ -152,19 +148,17 @@ def get_receipt_by_id(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    receipt = db.query(Receipt).filter(
+    receipt = db.query(
+        Receipt
+    ).options(
+        selectinload(Receipt.items)
+    ).filter(
         Receipt.id == receipt_id,
         Receipt.user_id == current_user.id
     ).first()
 
     if not receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
-
-    items = db.query(
-        models.ReceiptItem
-    ).filter_by(
-        receipt_id=receipt.id
-    ).all()
 
     products = [
         schemas.ProductOutput(
@@ -173,7 +167,7 @@ def get_receipt_by_id(
             quantity=item.quantity,
             total=item.total
         )
-        for item in items
+        for item in receipt.items
     ]
 
     payment = schemas.PaymentOutput(
@@ -198,12 +192,16 @@ def view_public_receipt(
     line_width: int = Query(40, ge=20, le=120),
     db: Session = Depends(get_db)
 ):
-    receipt = db.query(Receipt).filter_by(public_token=public_token).first()
+    receipt = db.query(
+        Receipt
+    ).options(
+        selectinload(Receipt.items)
+    ).filter_by(
+        public_token=public_token
+    ).first()
 
     if not receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
-
-    items = db.query(ReceiptItem).filter_by(receipt_id=receipt.id).all()
 
     def format_line(text: str, value: str = "", width: int = line_width):
         max_item_name_len = 14
@@ -222,7 +220,7 @@ def view_public_receipt(
     ]
 
     # Add items
-    for item in items:
+    for item in receipt.items:
         qty_price = (
             f"{item.quantity:.2f} x {item.price:,.2f}".replace(",", " ")
         )

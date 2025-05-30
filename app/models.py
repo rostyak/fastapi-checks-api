@@ -29,7 +29,9 @@ class Receipt(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="receipts")
-    items = relationship("ReceiptItem", back_populates="receipt")
+    items = relationship(
+        "ReceiptItem", back_populates="receipt", lazy="selectin"
+    )
 
     public_token = Column(
         String, unique=True, default=lambda: secrets.token_urlsafe(16)
