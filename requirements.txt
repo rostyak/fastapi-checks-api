@@ -8,3 +8,4 @@ psycopg2==2.9.10
 starlette==0.46.2
 pytest==8.3.5
 httpx==0.28.1
+pytest-asyncio==1.0.0

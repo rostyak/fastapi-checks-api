@@ -46,3 +46,8 @@ SQLALCHELMY_ECHO=False
 ```
 uvicorn app.main:app --reload
 ```
+
+## Tests running (Optional)
+```
+pytest app/tests/tests.py
+```
