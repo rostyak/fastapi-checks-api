@@ -3,10 +3,11 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from starlette.responses import PlainTextResponse
 
 from . import models, schemas
 from .dependencies import get_db, get_current_user
-from .models import User, Receipt
+from .models import User, Receipt, ReceiptItem
 from .schemas import PaymentType
 
 router = APIRouter()
@@ -188,3 +189,80 @@ def get_receipt_by_id(
         rest=receipt.rest,
         created_at=receipt.created_at
     )
+
+
+@router.get("/public/receipt/{public_token}", response_class=PlainTextResponse)
+def view_public_receipt(
+    public_token: str,
+    # Set minimum line width (for correct header and footer alignment)
+    line_width: int = Query(40, ge=20, le=120),
+    db: Session = Depends(get_db)
+):
+    receipt = db.query(Receipt).filter_by(public_token=public_token).first()
+
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+
+    items = db.query(ReceiptItem).filter_by(receipt_id=receipt.id).all()
+
+    def format_line(text: str, value: str = "", width: int = line_width):
+        max_item_name_len = 14
+
+        if len(text) > max_item_name_len:
+            text = text[:max_item_name_len - 3] + "..."
+
+        space = width - len(text) - len(value)
+
+        return f"{text}{' ' * max(1, space)}{value}"
+
+    # Add headers
+    lines = [
+        "ФОП Джонсонюк Борис".center(line_width),
+        "=" * line_width
+    ]
+
+    # Add items
+    for item in items:
+        qty_price = (
+            f"{item.quantity:.2f} x {item.price:,.2f}".replace(",", " ")
+        )
+        lines.append(qty_price)
+
+        name = item.name.strip()
+        name_line = format_line(
+            name, f"{item.total:,.2f}".replace(",", " ")
+        )
+
+        lines.append(name_line)
+        lines.append("-" * line_width)
+
+    lines.append("=" * line_width)
+
+    # Add totals
+    lines.append(format_line(
+        "СУМА", f"{receipt.total:,.2f}".replace(",", " ")
+    ))
+    lines.append(format_line(
+        "Картка", f"{receipt.payment_amount:,.2f}".replace(",", " ")
+    ))
+    lines.append(format_line(
+        "Решта", f"{receipt.rest:,.2f}".replace(",", " ")
+    ))
+    lines.append("=" * line_width)
+
+    # Add footer
+    lines.append(
+        receipt.created_at.strftime("%d.%m.%Y %H:%M").center(line_width)
+    )
+    lines.append("Дякуємо за покупку!".center(line_width))
+
+    max_len_line = max(len(line) for line in lines)
+
+    # Check is the longest line exceeds the specified width - if True, return
+    # the receipt with the maximum line width
+    if max_len_line > line_width:
+        return view_public_receipt(
+            public_token, line_width=max_len_line, db=db
+        )
+
+    return "\n".join(lines)

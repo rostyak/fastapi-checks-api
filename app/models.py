@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime
 
 from sqlalchemy import Column, Integer, String, ForeignKey, Float, DateTime
@@ -29,6 +30,10 @@ class Receipt(Base):
 
     user = relationship("User", back_populates="receipts")
     items = relationship("ReceiptItem", back_populates="receipt")
+
+    public_token = Column(
+        String, unique=True, default=lambda: secrets.token_urlsafe(16)
+    )
 
 
 class ReceiptItem(Base):
