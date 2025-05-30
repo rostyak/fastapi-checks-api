@@ -25,3 +25,20 @@ def create_access_token(data: dict):
     to_encode.update({"exp": expire})
 
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+true_values_set = {"1", "true", "True", "yes", "Y", "on"}
+
+
+def read_bool_from_os_env(name, default=False):
+    v = os.environ.get(name)
+
+    if v is not None:
+
+        if v in true_values_set:
+            return True
+        else:
+            return False
+
+    else:
+        return default
