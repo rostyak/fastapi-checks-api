@@ -39,11 +39,10 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
 @router.post("/login", response_model=schemas.Token)
 def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter_by(username=user.username).first()
-    verified_user = utils.verify_password(
-        user.password, db_user.hashed_password
-    )
 
-    if not db_user or not verified_user:
+    if not db_user or not utils.verify_password(
+        user.password, db_user.hashed_password
+    ):
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
     token = utils.create_access_token(data={"sub": user.username})
